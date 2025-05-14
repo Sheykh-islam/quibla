@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Qibla Compass</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0,maximum-scale=1,user-scalable=no">
+  <style>
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f0f6f8;
+      margin: 0;
+      padding: 0;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    h2 { margin: 0.7em 0 0.5em; }
+    #compassBox {
+      background: white;
+      border-radius: 30px;
+      box-shadow: 0 2px 14px 0 #aee3eb49;
+      padding: 1.2em 1em 1em 1em;
+      max-width:360px;
+      width: 98vw;
+      margin: 1em 5px 0 5px;
+      display:flex; flex-direction: column; align-items: center;
+    }
+    .compass-container {
+      position: relative;
+      width: 290px;
+      height: 290px;
+      max-width: min(95vw, 320px);
+      max-height: min(95vw, 320px);
+      margin: 0.5em auto 1.3em;
+      touch-action: none;
+      background: #b1dbe4 linear-gradient(145deg, #54b7e1 40%, #ead8ef 130%);
+      border-radius: 50%;
+      border:10px solid #e7f6fa;
+      box-shadow: 0 2px 20px 0 #94c9be30;
+    }
+    canvas { width: 100%; height: 100%; display:block; }
+    #qiblaStatus {
+      font-weight: 600;
+      font-size: 1.04em;
+      margin: 0.7em 0 0.3em;
+      transition: color 0.3s;
+      letter-spacing: 0.3px;
+    }
+    #qiblaAngle { font-size: 1.02em; color: #5b8895; margin-bottom:0.4em;}
+    #prayer-times {
+      margin: 1.3em auto 0.1em auto;
+      background: #eefffa;
+      padding:0.75em 1em 0.6em 1em;
+      border-radius: 12px;
+      min-width: 215px;
+      box-shadow: 0 2px 10px 0 #aee3eb23;
+      font-size:1.06em;
+      color: #0b5656;
+    }
+    .btn { background:#34cc87; color:white; padding:0.5em 1.2em; border:0; border-radius:7px;
+          font-size:1.07em; font-weight:500; margin:0.55em 0 0.3em 0; }
+    @media (max-width: 350px){
+      .compass-container{ width:98vw; height:98vw;}
+    }
+  </style>
+</head>
+<body>
+  <h2>Кибла-компас</h2>
+  <div id="compassBox">
+    <div id="geoStatus" style="color:#226287;margin:0 0 0.7em 0;font-weight:500;">Определяем местоположение...</div>
+    <div class="compass-container">
+      <canvas id="compass" width="290" height="290"></canvas>
+    </div>
+    <div id="qiblaStatus">Ожидание данных...</div>
+    <div id="qiblaAngle"></div>
+    <button id="permit" class="btn" style="display:none;">Включить компас (iPhone)</button>
+  </div>
+  <div id="prayer-times"></div>
+  <script>
+    // --- CONSTANTS ---
+    const kaabaLat = 21.4225, kaabaLon = 39.8262;
+    const canvas = document.getElementById('compass');
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width;
+    const cx = size/2, cy = size/2, R = size/2-17;
+    let userLat=0, userLon=0, ready=false, qiblaAng=0, currentHeading=0;
+    let lastDirection = null, qiblaDiff = null;
+
+    // --- UTILS ---
+    function getQiblaAngle(lat, lon) {
+        let phiK = kaabaLat * Math.PI / 180;
+        let lambdaK = kaabaLon * Math.PI / 180;
+        let phi = lat * Math.PI / 180;
+        let lambda = lon * Math.PI / 180;
+
+        let y = Math.sin(lambdaK - lambda);
+        let x = Math.cos(phi) * Math.tan(phiK) - Math.sin(phi) * Math.cos(lambdaK - lambda);
+
+        let theta = Math.atan2(y, x);
+        let bearing = theta * 180 / Math.PI;
+        return (bearing + 360) % 360;
+    }
+    function normalizeAngle(angle) { // 0..360
+      return ((angle % 360) + 360) % 360;
+    }
+    // --- DRAW COMPASS ---
+    function drawCompass(heading=0, qiblaAngle=0, status='wait') {
+      // status = "direct" / "notdirect"/"wait"
+      ctx.clearRect(0,0,size,size);
+      // exterior
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, 2*Math.PI, false);
+      ctx.lineWidth = 10;
+      ctx.strokeStyle = '#e8edef';
+      ctx.stroke();
+      ctx.restore();
+
+      // Compass marks
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-heading*Math.PI/180);
+      for(let i=0; i<360; i+=10){
+        ctx.save();
+        ctx.rotate(i*Math.PI/180);
+        ctx.beginPath();
+        ctx.moveTo(0, -R+5);
+        ctx.lineTo(0, -R+ (i%90==0? 23 : (i%30==0?13:7) ) );
+        ctx.lineWidth = (i%90==0?2.9: (i%30==0?1.2:0.7));
+        ctx.strokeStyle = (i%90==0? '#275e70': (i%30==0?'#2d9ba7':'#67c2c2') );
+        ctx.stroke();
+        if(i%90==0){
+          ctx.font = "bold 20px Segoe UI";
+          ctx.fillStyle = i==0? "#e74c3c":"#289";
+          let txt = (i==0?"N":i==90?"E":i==180?"S":"W");
+          ctx.textBaseline="bottom";
+          ctx.textAlign="center";
+          ctx.fillText(txt, 0, -R+35);
+        }
+        ctx.restore();
+      }
+      ctx.restore();
+
+      // Qibla marker (relative to heading)
+      ctx.save();
+      ctx.translate(cx, cy);
+      let qAng = normalizeAngle(qiblaAngle - heading);
+      ctx.rotate(qAng*Math.PI/180);
+      // Если пользователь точно/приближённо в сторону Киблы - marker яркий
+      let direct = Math.abs(normalizeAngle(qAng)) < 8;
+      ctx.beginPath();
+      ctx.arc(0, -R+43, 14, 0, 2*Math.PI);
+      ctx.fillStyle = direct? "#34e67a":"#1eb47a";
+      ctx.globalAlpha = direct?0.93:0.6;
+      ctx.shadowColor = direct?"#aaf7cd":"#00c07a";
+      ctx.shadowBlur = direct ? 21 : 6;
+      ctx.fill();
+      ctx.globalAlpha=1;
+      ctx.shadowBlur = 0;
+      // К бейджу добавим Kaaba-иконку
+      ctx.font="bold 16px Arial";
+      ctx.textAlign="center";
+      ctx.textBaseline="middle";
+      ctx.fillStyle="white";
+      ctx.fillText("🕋", 0, -R+43);
+      ctx.restore();
+
+      // User direction pointer
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(0);
+      // Draw main arrow (user)
+      ctx.beginPath();
+      ctx.moveTo(0, -R+12);
+      ctx.lineTo(-12, -R+34);
+      ctx.lineTo(0, -R+29);
+      ctx.lineTo(12, -R+34);
+      ctx.closePath();
+      ctx.fillStyle = "#2192d1";
+      ctx.shadowColor = "#78cff5";
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // --- ANGLE HANDLER + QIBLA STATUS ---
+    function updateCompass(heading) {
+      if(!ready) return;
+      currentHeading = normalizeAngle(heading || 0);
+      // Какое отклонение от Киблы (по компасу)
+      let diff = normalizeAngle(qiblaAng - currentHeading);
+      let diffNorm = Math.abs(diff>180? diff-360 : diff); // -180 ... 180
+      drawCompass(currentHeading, qiblaAng, (Math.abs(diffNorm)<8?'direct':'notdirect'));
+      // Статус и цвет
+      if(Math.abs(diffNorm)<8){
+        document.getElementById('qiblaStatus').style.color="#17ad4d";
+        document.getElementById('qiblaStatus').textContent="✅ Вы смотрите в сторону Киблы!";
+      } else {
+        document.getElementById('qiblaStatus').style.color="#da3939";
+        document.getElementById('qiblaStatus').textContent="⛔ Вы смотрите НЕ в сторону Киблы";
+      }
+      document.getElementById('qiblaAngle').innerHTML =
+        `Угол до Киблы от севера: <span style="color:#2192d1">${qiblaAng.toFixed(1)}°</span>`;
+    }
+
+    // --- DEVICE ORIENTATION API ---
+    function bindOrientation() {
+      // Для iOS требуется клик для разрешения
+      if(
+        typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function'
+      ){
+        document.getElementById('permit').style.display='inline-block';
+        document.getElementById('permit').onclick=()=>{
+          DeviceOrientationEvent.requestPermission().then(r=>{
+            if(r==='granted'){
+              window.addEventListener("deviceorientation", processHeading, true);
+              document.getElementById('permit').style.display='none';
+            }
+          });
+        };
+      } else {
+        window.addEventListener("deviceorientationabsolute", processHeading, true);
+        window.addEventListener("deviceorientation", processHeading, true);
+      }
+    }
+
+    function processHeading(ev){
+      let alpha = ev.alpha;
+      // В некоторых браузерах ориентация пересчитывается относительно компаса/географ.севера
+      let heading;
+      if(typeof ev.webkitCompassHeading!=="undefined") heading = ev.webkitCompassHeading;
+      else if(ev.absolute && typeof alpha==="number") heading = 360-alpha;
+      else heading = alpha;
+      if(typeof heading==="number" && !isNaN(heading)){
+        updateCompass(heading);
+      }
+    }
+
+    // --- INIT ---
+    function setReady(){
+      ready=true;
+      bindOrientation();
+      updateCompass(0); // стартовое положение
+    }
+
+    // --- GEOLOCATION ---
+    if(navigator.geolocation){
+      navigator.geolocation.getCurrentPosition(pos=>{
+        userLat = pos.coords.latitude;
+        userLon = pos.coords.longitude;
+        qiblaAng = getQiblaAngle(userLat, userLon);
+        setReady();
+        document.getElementById('geoStatus').textContent =
+          "Ваши координаты:\n" +
+          userLat.toFixed(5) + ", " + userLon.toFixed(5);
+        // Prayer times
+        fetch(`https://api.aladhan.com/v1/timings?latitude=${userLat}&longitude=${userLon}&method=2`)
+            .then(r => r.json()).then(data => {
+              let t = data.data.timings;
+              let html = "<b>Время намаза:</b><br><pre style='margin-bottom:0'>";
+              ['Fajr','Sunrise','Dhuhr','Asr','Maghrib','Isha'].forEach(p => {
+                let trans = {Fajr:'Фаджр',Sunrise:'Восход',Dhuhr:'Зухр',Asr:'Аср',Maghrib:'Магриб',Isha:'Иша'};
+                html += trans[p]+ ' : ' + t[p] + "\n";
+              });
+              html += "</pre>";
+              document.getElementById('prayer-times').innerHTML = html;
+            });
+      }, err=>{
+        document.getElementById('geoStatus').textContent = "Ошибка определения геопозиции!";
+      })
+    }else{
+      document.getElementById('geoStatus').textContent = "Геолокация не поддерживается";
+    }
+    // Первичная отрисовка
+    drawCompass();
+
+  </script>
+</body>
+</html>
