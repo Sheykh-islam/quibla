@@ -55,11 +55,17 @@
       background: #eefffa;
       padding:0.75em 1em 0.6em 1em;
       border-radius: 12px;
-      min-width: 215px;
+      /* Изменяем для полной ширины */
+      max-width: 360px; /* Ограничиваем, чтобы не был слишком широким на больших экранах */
+      width: 98vw; /* Делаем почти полную ширину */
       box-shadow: 0 2px 10px 0 #aee3eb23;
       font-size:1.06em;
       color: #0b5656;
+      box-sizing: border-box; /* Учитываем padding в ширине */
+      text-align: left; /* Выравниваем текст по левому краю внутри блока */
     }
+    #prayer-times pre { margin: 0; } /* Убираем стандартный отступ pre */
+
     .btn { background:#34cc87; color:white; padding:0.5em 1.2em; border:0; border-radius:7px;
           font-size:1.07em; font-weight:500; margin:0.55em 0 0.3em 0; }
     @media (max-width: 350px){
@@ -179,8 +185,8 @@
       ctx.lineTo(0, -R+29);
       ctx.lineTo(12, -R+34);
       ctx.closePath();
-      ctx.fillStyle = "#2192d1";
-      ctx.shadowColor = "#78cff5";
+      ctx.fillStyle = "#34cc87";
+      ctx.shadowColor = "#aaffcc";
       ctx.shadowBlur = 12;
       ctx.fill();
       ctx.restore();
